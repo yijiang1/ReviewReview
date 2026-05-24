@@ -2,7 +2,8 @@ import { CheckCircle, Loader2, Clock } from 'lucide-react';
 
 const STEPS = [
   { id: 'extract',    label: 'Extracting paper content',       sub: 'Reading title, authors, and abstract' },
-  { id: 'publications',label: 'Fetching publication record',   sub: 'Querying OpenAlex for recent papers' },
+  { id: 'parse_authors', label: 'Identifying paper authors',   sub: 'Parsing names from paper text' },
+  { id: 'publications',label: 'Fetching publication records',  sub: 'Querying OpenAlex for baseline impact metrics' },
   { id: 'research',   label: 'Researching reviewer background', sub: 'Academic history, affiliations, publications' },
   { id: 'authors',    label: 'Investigating paper authors',     sub: 'PhD trees, career history, institutions' },
   { id: 'connections',label: 'Mapping academic connections',    sub: 'Checking co-authorship, mentorship, overlap' },

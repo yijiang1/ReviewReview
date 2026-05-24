@@ -12,7 +12,7 @@ import { Card, Label } from './components/UI.jsx';
 import {
   callAI, getApiKey, getSelectedProvider, getSelectedModel, PROVIDERS, MODELS, estimateRunCost,
 } from './lib/api.js';
-import { fetchAuthorProfile, fetchAuthorWorks, formatWorksForPrompt } from './lib/openalex.js';
+import { fetchAuthorProfile, fetchAuthorWorks, formatWorksForPrompt, formatAuthorMetrics } from './lib/openalex.js';
 
 
 
@@ -22,13 +22,76 @@ async function runAnalysis({ paperText, reviewerName, provider, model, apiKey, o
   onStatus('Reading paper content…');
   await new Promise(r => setTimeout(r, 400)); // brief delay for UX
 
+  onStep('parse_authors');
+  onStatus('Extracting author list from paper…');
+  const extractRaw = await callAI({
+    provider, apiKey, model, useSearch: false, maxTokens: 300,
+    systemPrompt: 'Extract a comma-separated list of author names from the provided paper text. Return ONLY the names, separated by commas. Do not include affiliations or any other text.',
+    userPrompt: `Paper text:\n${paperText.slice(0, 3000)}`
+  });
+  const extractedAuthors = extractRaw.split(',').map(n => n.trim()).filter(n => n.length > 2).slice(0, 6); // cap at 6 authors to save time
+
+  // HARD-CODED CHECK: Is the reviewer an author?
+  const isSelfReview = extractedAuthors.some(author => {
+    const t1 = author.toLowerCase().replace(/[^a-z ]/g, '').split(/\s+/).filter(x => x.length > 1);
+    const t2 = reviewerName.toLowerCase().replace(/[^a-z ]/g, '').split(/\s+/).filter(x => x.length > 1);
+    if (t1.length === 0 || t2.length === 0) return false;
+    const shorter = t1.length < t2.length ? t1 : t2;
+    const longer = t1.length < t2.length ? t2 : t1;
+    return shorter.every(token => longer.includes(token));
+  });
+
+  if (isSelfReview) {
+    onStatus('Reviewer is an author on this paper. Automatically rejecting…');
+    await new Promise(r => setTimeout(r, 1000));
+    return {
+      reviewer_name: reviewerName,
+      paper_title: "Submitted Manuscript",
+      authors: extractedAuthors.map(n => ({ name: n, institution: "Unknown" })),
+      reviewer_profile: { institution: "Unknown", research_areas: [], career_history: [] },
+      connections: [{
+        type: "Co-authored papers",
+        with_author: reviewerName,
+        description: "The candidate reviewer is listed as a co-author on the submitted manuscript."
+      }],
+      conflict_of_interest: {
+        score: 10,
+        verdict: "Major Conflict",
+        findings: ["The reviewer is an author of the submitted paper."],
+        explanation: "Automatic rejection: Direct self-review is a severe violation of peer review integrity."
+      },
+      expertise: {
+        score: 10, verdict: "Excellent Match", paper_topics: [], reviewer_topics: [],
+        explanation: "The reviewer wrote the paper."
+      },
+      overall_recommendation: "Not Recommended",
+      overall_score: 0,
+      summary: "The candidate reviewer is listed as an author on the submitted manuscript. This is an automatic, severe conflict of interest. The evaluation was aborted early to prevent self-review."
+    };
+  }
+
   onStep('publications');
-  onStatus('Fetching reviewer publication record from OpenAlex…');
-  const authorProfile = await fetchAuthorProfile(reviewerName);
-  let worksText = "No publication record found on OpenAlex.";
-  if (authorProfile && authorProfile.id) {
-    const works = await fetchAuthorWorks(authorProfile.id, 10);
-    worksText = formatWorksForPrompt(works);
+  onStatus('Fetching OpenAlex metrics for baseline comparison…');
+  
+  // Fetch paper authors baseline
+  let authorMetricsText = 'Could not extract authors for baseline.';
+  if (extractedAuthors.length > 0) {
+    const authorProfiles = await Promise.all(extractedAuthors.map(name => fetchAuthorProfile(name)));
+    authorMetricsText = extractedAuthors.map((name, i) => {
+      const p = authorProfiles[i];
+      return `- ${name}: ${formatAuthorMetrics(p)}`;
+    }).join('\n');
+  }
+
+  // Fetch reviewer profile
+  const reviewerProfile = await fetchAuthorProfile(reviewerName);
+  let reviewerWorksText = "No publication record found on OpenAlex.";
+  let reviewerMetricsText = "Metrics unavailable.";
+  
+  if (reviewerProfile && reviewerProfile.id) {
+    reviewerMetricsText = formatAuthorMetrics(reviewerProfile);
+    const works = await fetchAuthorWorks(reviewerProfile.id, 10);
+    reviewerWorksText = formatWorksForPrompt(works);
   } else {
     await new Promise(r => setTimeout(r, 400));
   }
@@ -50,9 +113,18 @@ ${paperText.slice(0, 4000)}
 
 Candidate reviewer: ${reviewerName}
 
+COMPARATIVE IMPACT METRICS (from OpenAlex):
+---
+Paper Authors:
+${authorMetricsText}
+
+Reviewer (${reviewerName}):
+- ${reviewerMetricsText}
+---
+
 REVIEWER'S PUBLICATION RECORD (from OpenAlex):
 ---
-${worksText}
+${reviewerWorksText}
 ---
 
 Search the web carefully to build a complete academic profile for each person. For EACH paper author and for the reviewer, find:
@@ -103,6 +175,13 @@ Research findings:
 ---
 ${research}
 ---
+
+Comparative Baseline:
+Paper Authors Metrics:
+${authorMetricsText}
+
+Reviewer Metrics:
+${reviewerMetricsText}
 
 Paper excerpt:
 ---
@@ -167,11 +246,14 @@ If no connections found, use one entry: { "type": "No significant connection", "
 
 Scoring rules:
 - conflict_of_interest.score: 0 = no conflict, 10 = severe (shared advisor, direct mentorship, recent co-author)
-- expertise.score: 0 = completely unrelated field, 10 = world-leading expert on this exact topic
+  CRITICAL: The candidate reviewer (${reviewerName}) is NOT an author of the submitted manuscript. NEVER hallucinate that the reviewer is a co-author of the submitted paper. Only flag co-authorships if they co-authored PAST, published papers together.
+- expertise.score: 0 = completely unrelated field, 10 = world-leading expert on this exact topic. 
+  CRITICAL: Be extremely strict with adjacent expertise. If the paper uses a highly specific technique (e.g. electron ptychography) and the reviewer is an expert in a broader or adjacent field (e.g. CDI/AET) but lacks recent publications in the exact specific technique, penalize the score significantly (score < 5). A score of 8-10 requires concrete evidence of publications in the exact specific sub-field.
+  QUANTITATIVE CHECK: Compare the Reviewer's h-index and citation count against the Paper Authors. If the reviewer's metrics are significantly lower than the authors', it strongly indicates they are not a true senior expert in this specific domain. Penalize the expertise score accordingly.
 - overall_score: 0 = worst reviewer choice, 10 = ideal
 - If COI score >= 7, overall_score must be <= 3 and recommendation must be "Not Recommended"
 - verdict for COI: exactly one of "No Conflict" | "Minor Concern" | "Major Conflict"
-- verdict for expertise: exactly one of "Excellent Match" | "Good Match" | "Partial Match" | "Poor Match"
+- verdict for expertise: exactly one of "Excellent Match" | "Good Match" | "Partial Match" | "Poor Match". Use "Partial Match" or "Poor Match" if the reviewer only has adjacent expertise or low comparative impact.
 - overall_recommendation: exactly one of "Highly Recommended" | "Recommended" | "Conditionally Recommended" | "Not Recommended"`,
   });
 

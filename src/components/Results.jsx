@@ -1,7 +1,7 @@
 import {
   GraduationCap, FlaskConical, Building2, Users, FileText,
   Share2, Quote, CheckCircle2, RotateCcw, MapPin,
-  Award, BookOpen, AlertTriangle
+  Award, BookOpen, AlertTriangle, Download
 } from 'lucide-react';
 import { Badge, Chip, Label, Ring, Card, Divider } from './UI.jsx';
 
@@ -28,8 +28,8 @@ const CONNECTION_META = {
   'Postdoc relationship':     { Icon: GraduationCap,  level: 'red' },
   'Co-authored papers':       { Icon: FileText,        level: 'amber' },
   'Same institution overlap': { Icon: Building2,       level: 'amber' },
-  'Same research community':  { Icon: Share2,          level: 'amber' },
-  'Heavy citation overlap':   { Icon: Quote,           level: 'amber' },
+  'Same research community':  { Icon: Share2,          level: 'info' },
+  'Heavy citation overlap':   { Icon: Quote,           level: 'info' },
   'No significant connection':{ Icon: CheckCircle2,    level: 'green' },
 };
 
@@ -95,13 +95,13 @@ function ConnectionsList({ connections }) {
         return (
           <div key={i} className={`connection-item ${level}`}>
             <Icon size={16} style={{
-              color: level === 'red' ? 'var(--red-fg)' : level === 'amber' ? 'var(--amber-fg)' : 'var(--green-fg)',
+              color: level === 'red' ? 'var(--red-fg)' : level === 'amber' ? 'var(--amber-fg)' : level === 'info' ? 'var(--info-fg)' : 'var(--green-fg)',
               flexShrink: 0, marginTop: 1,
             }} />
             <div style={{ flex: 1 }}>
               <p style={{
                 margin: '0 0 2px', fontSize: 12, fontWeight: 600,
-                color: level === 'red' ? 'var(--red-fg)' : level === 'amber' ? 'var(--amber-fg)' : 'var(--green-fg)',
+                color: level === 'red' ? 'var(--red-fg)' : level === 'amber' ? 'var(--amber-fg)' : level === 'info' ? 'var(--info-fg)' : 'var(--green-fg)',
               }}>{c.type}</p>
               <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: 'var(--text-primary)' }}>{c.description}</p>
               {c.with_author && (
@@ -125,6 +125,16 @@ export function Results({ result, onReset }) {
   const authors  = result.authors || [];
   const connections = result.connections || [];
   const recColor = recBadge(result.overall_recommendation);
+
+  const handlePrint = () => {
+    const originalTitle = document.title;
+    const safeTitle = (result.paper_title || 'Paper').substring(0, 40).replace(/[^a-z0-9]/gi, '_');
+    const safeName = (result.reviewer_name || 'Reviewer').replace(/[^a-z0-9]/gi, '_');
+    document.title = `Reviewer_Report_${safeName}_${safeTitle}`;
+    window.print();
+    // Revert title after print dialog closes (setTimeout to ensure browser catches it)
+    setTimeout(() => { document.title = originalTitle; }, 100);
+  };
 
   return (
     <div className="animate-fade-up">
@@ -283,8 +293,11 @@ export function Results({ result, onReset }) {
         </Card>
       )}
 
-      {/* ── Reset button ─── */}
-      <div style={{ display: 'flex', justifyContent: 'center' }}>
+      {/* ── Actions ─── */}
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'center', gap: 12 }}>
+        <button className="btn btn-primary" onClick={handlePrint} style={{ gap: 8 }}>
+          <Download size={14} /> Save as PDF
+        </button>
         <button className="btn btn-secondary" onClick={onReset} style={{ gap: 8 }}>
           <RotateCcw size={14} /> Evaluate another reviewer
         </button>

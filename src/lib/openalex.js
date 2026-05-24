@@ -81,3 +81,17 @@ Keywords: ${concepts}
 Abstract: ${abstract}`;
   }).join('\n\n---\n\n');
 }
+
+/**
+ * Format the author's quantitative impact metrics into a string for the prompt.
+ */
+export function formatAuthorMetrics(authorProfile) {
+  if (!authorProfile) return "Metrics unavailable.";
+  
+  const citations = authorProfile.cited_by_count || 0;
+  const hIndex = authorProfile.summary_stats?.h_index || 0;
+  const i10Index = authorProfile.summary_stats?.i10_index || 0;
+  const papers = authorProfile.works_count || 0;
+  
+  return `h-index: ${hIndex} | Citations: ${citations.toLocaleString()} | i10-index: ${i10Index} | Papers: ${papers.toLocaleString()}`;
+}

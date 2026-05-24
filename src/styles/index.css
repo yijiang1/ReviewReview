@@ -471,6 +471,7 @@ textarea:disabled {
 .connection-item.red    { background: var(--red-bg); border-color: var(--red-border); }
 .connection-item.amber  { background: var(--amber-bg); border-color: var(--amber-border); }
 .connection-item.green  { background: var(--green-bg); border-color: var(--green-border); }
+.connection-item.info   { background: var(--info-bg); border-color: rgba(99,179,237,0.2); }
 
 /* ── Timeline ────────────────────────────────────────────── */
 .timeline { position: relative; padding-left: 24px; }
@@ -605,4 +606,15 @@ textarea:disabled {
   .hero { padding: 1rem 0 1.5rem; }
   .hero-title { font-size: 26px; }
   .tab-btn .coming-soon { display: none; }
+}
+
+/* ── Print Styles ────────────────────────────────────────── */
+@media print {
+  body { background: white; color: black; }
+  .no-print, .no-print * { display: none !important; }
+  .app-header, .hero, .tab-bar { display: none !important; }
+  .results-header-bg::after { display: none !important; }
+  .card { box-shadow: none !important; border: 1px solid #ddd !important; break-inside: avoid; margin-bottom: 20px; }
+  .page-container { padding: 0 !important; margin: 0 !important; max-width: 100% !important; }
+  @page { margin: 1.5cm; }
 }
